@@ -1,0 +1,9 @@
+.env
+.DS_Store
+~$*
+old-deployments/
+Server installation/
+Populate DB/
+*.sql
+*.rtf
+imports_fixed_test_server.sh
