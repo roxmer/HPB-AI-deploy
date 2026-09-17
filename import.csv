@@ -1,6 +1,7 @@
 api_path,filename
 sampleType,Sample_Type_export.xlsx
 analysisType,AnalysisType_export.xlsx
+analysisStatus,AnalysisStatus_export.xlsx
 result_type,ResultType_export.xlsx
 relativeType,RelativeType.xlsx
 statusType,Status_Type.xlsx
@@ -49,3 +50,5 @@ tumorRegressionSystem,TumorRegressionSystem_export.xlsx
 technique,Technique_TestName_TestResult_TestUnit_export.xlsx
 organ-list,OrganList_Resection_Type_export.xlsx
 primary-parameter,PrimaryParameter_data_export_all.xlsx
+extractionMethod,extraction_method.xlsx
+result_name,ResultName_export.xlsx

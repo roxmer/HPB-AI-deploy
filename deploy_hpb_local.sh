@@ -49,6 +49,8 @@ PROJECT_DIR="${PROJECT_DIR:-$PARENT_DIR/11.-HPB}"
 PROGRAMMERS_REPO="${PROGRAMMERS_REPO:-https://github.com/kiehealth/11.-HPB.git}"
 YOUR_REPO="${YOUR_REPO:?Set YOUR_REPO in deploy_HPB/.env to your own fork, e.g. https://github.com/<you>/HPB-AI.git}"
 AI_AGENT_DIR="${AI_AGENT_DIR:-$PARENT_DIR/ai_agent_learning}"
+MOLECULAR_AGENT_DIR="${MOLECULAR_AGENT_DIR:-$PARENT_DIR/molecular_report_agent}"
+MOLECULAR_SIDECAR_PORT="${MOLECULAR_SIDECAR_PORT:-8090}"
 OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2.5:14b}"   # change to qwen2.5:32b when on KI GPU servers
 OLLAMA_HOST="${OLLAMA_HOST:-http://localhost:11434}"
 # ─────────────────────────────────────────────────────────────
@@ -472,8 +474,9 @@ echo "✅ Build successful."
 
 # ── STEP 11: Clear ports ──────────────────────────────────────
 echo ""
-echo "▶ Step 11: Clearing ports 8000 and 9080 if in use..."
+echo "▶ Step 11: Clearing ports 8000, $MOLECULAR_SIDECAR_PORT and 9080 if in use..."
 lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+lsof -ti:"$MOLECULAR_SIDECAR_PORT" | xargs kill -9 2>/dev/null || true
 lsof -ti:9080 | xargs kill -9 2>/dev/null || true
 sleep 1
 echo "✅ Ports cleared."
@@ -508,6 +511,27 @@ curl -s http://localhost:8000/health > /dev/null 2>&1 \
   && echo "✅ AI Agent health check passed." \
   || echo "⚠️  AI Agent did not respond yet — check agent.log if issues arise"
 
+# ── STEP 12b: Start molecular report parsing sidecar ──────────
+#   Wraps molecular_report_agent/extract_molecular_report.py's parse_report() in a tiny
+#   localhost-only HTTP service, so the Add Analysis "Automatic" mode can parse an
+#   uploaded PDF via the Java backend (POST /api/analysis/parse_preview) without
+#   reimplementing the parser in Java. See molecular_report_agent/PLAN_AUTOMATIC_MODE.md.
+#   Lives as a sibling of this deploy_HPB folder, same as ai_agent_learning -- Step 3's
+#   `rm -rf $PROJECT_DIR` never touches it, so nothing here needs re-patching on redeploy.
+echo ""
+echo "▶ Step 12b: Starting molecular report parsing sidecar on port $MOLECULAR_SIDECAR_PORT..."
+pip3 install --user --quiet -r "$MOLECULAR_AGENT_DIR/requirements.txt"
+cd "$MOLECULAR_AGENT_DIR"
+nohup python3 service.py --port "$MOLECULAR_SIDECAR_PORT" \
+    > "$MOLECULAR_AGENT_DIR/sidecar.log" 2>&1 &
+SIDECAR_PID=$!
+echo "✅ Report parsing sidecar started (PID: $SIDECAR_PID). Logs: $MOLECULAR_AGENT_DIR/sidecar.log"
+sleep 2
+
+curl -s "http://localhost:$MOLECULAR_SIDECAR_PORT/health" > /dev/null 2>&1 \
+  && echo "✅ Report parsing sidecar health check passed." \
+  || echo "⚠️  Report parsing sidecar did not respond yet — check sidecar.log if Automatic-mode parsing fails"
+
 # ── STEP 13: Start SpringBoot ─────────────────────────────────
 echo ""
 echo "======================================"
@@ -518,6 +542,8 @@ echo "  SpringBoot : http://localhost:9080"
 echo "  AI Agent   : http://localhost:8000"
 echo "  AI Docs    : http://localhost:8000/docs"
 echo "  Agent Log  : $AI_AGENT_DIR/agent.log"
+echo "  Sidecar    : http://localhost:$MOLECULAR_SIDECAR_PORT (Automatic-mode PDF parsing -- Java backend only, not browser-facing)"
+echo "  Sidecar Log: $MOLECULAR_AGENT_DIR/sidecar.log"
 echo "======================================"
 echo ""
 cd "$PROJECT_DIR"
