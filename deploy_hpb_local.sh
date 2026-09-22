@@ -22,6 +22,15 @@
 #                                                       instead of latest (accepts
 #                                                       any git ref: full/short SHA,
 #                                                       branch, or tag)
+#     ./deploy_hpb_local.sh --local-only             ← Skip cloning the programmers'
+#                                                       repo and re-applying patches --
+#                                                       deploy 11.-HPB exactly as it
+#                                                       sits on disk right now. Use
+#                                                       this to test local edits
+#                                                       (including ones not yet
+#                                                       copied into backend_patches/)
+#                                                       without them being overwritten.
+#                                                       Not combinable with --commit.
 #
 #   Before running:
 #     chmod +x deploy_hpb_local.sh
@@ -61,6 +70,14 @@ set -e
 KEEP_DB=false
 BACKEND="ollama"   # default
 COMMIT=""          # default: empty = deploy latest (HEAD of default branch)
+LOCAL_ONLY=false   # default: false = clone fresh from programmers' repo and
+                   # apply the AI Assistant + backend_patches patches on top,
+                   # as before. true (--local-only) = skip all of that and
+                   # deploy $PROJECT_DIR exactly as it sits on disk right now
+                   # -- no clone, no re-patch, nothing merged in from anywhere.
+                   # Use this to test local changes (e.g. edits you're making
+                   # directly in 11.-HPB, or changes not yet copied into
+                   # backend_patches/) without them being overwritten.
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -88,9 +105,13 @@ while [[ $# -gt 0 ]]; do
       COMMIT="${1#--commit=}"
       shift
       ;;
+    --local-only)
+      LOCAL_ONLY=true
+      shift
+      ;;
     *)
       echo "❌ Unknown argument: $1"
-      echo "   Usage: ./deploy_hpb_local.sh [--backend ollama|claude] [--keep-db|-k] [--commit <sha|branch|tag>]"
+      echo "   Usage: ./deploy_hpb_local.sh [--backend ollama|claude] [--keep-db|-k] [--commit <sha|branch|tag>] [--local-only]"
       exit 1
       ;;
   esac
@@ -98,6 +119,12 @@ done
 
 if [[ "$BACKEND" != "ollama" && "$BACKEND" != "claude" ]]; then
   echo "❌ Invalid backend: $BACKEND. Must be 'ollama' or 'claude'."
+  exit 1
+fi
+
+if [ "$LOCAL_ONLY" = true ] && [ -n "$COMMIT" ]; then
+  echo "❌ --local-only and --commit can't be combined -- --commit checks out a"
+  echo "   ref from the programmers' repo, but --local-only skips cloning it."
   exit 1
 fi
 
@@ -115,7 +142,11 @@ echo ""
 echo "======================================"
 echo "  HPB-AI Local Deployment Starting..."
 echo "  Backend    : $BACKEND_LABEL"
-echo "  Commit     : ${COMMIT:-latest (HEAD of default branch)}"
+if [ "$LOCAL_ONLY" = true ]; then
+  echo "  Source     : LOCAL ONLY -- deploying \$PROJECT_DIR as-is, no clone, no patching"
+else
+  echo "  Commit     : ${COMMIT:-latest (HEAD of default branch)}"
+fi
 echo "  $DB_LABEL"
 echo "======================================"
 echo ""
@@ -190,29 +221,43 @@ mvn -version > /dev/null 2>&1 || {
 }
 echo "✅ Maven is available."
 
-# ── STEP 3: Clone programmers' repo fresh ───────────────────
+# ── STEP 3: Clone programmers' repo fresh (skipped in --local-only) ──
 echo ""
-if [ -n "$COMMIT" ]; then
-  echo "▶ Step 3: Cloning programmers' repo and checking out commit $COMMIT..."
-else
-  echo "▶ Step 3: Cloning latest code from programmers' repo..."
-fi
-if [ -d "$PROJECT_DIR" ]; then
-  echo "   Removing existing folder..."
-  rm -rf "$PROJECT_DIR"
-fi
-cd "$PARENT_DIR"
-git clone "$PROGRAMMERS_REPO"
-echo "✅ Programmers' repo cloned successfully."
-
-cd "$PROJECT_DIR"
-if [ -n "$COMMIT" ]; then
-  git checkout "$COMMIT" || {
-    echo "❌ Could not check out commit/ref '$COMMIT' — is it pushed to $PROGRAMMERS_REPO?"
+if [ "$LOCAL_ONLY" = true ]; then
+  echo "▶ Step 3: Skipped (--local-only) -- deploying $PROJECT_DIR as-is."
+  if [ ! -d "$PROJECT_DIR" ]; then
+    echo "❌ --local-only requires $PROJECT_DIR to already exist -- there's nothing"
+    echo "   to deploy. Run without --local-only at least once first, or point"
+    echo "   PROJECT_DIR at an existing checkout in deploy_HPB/.env."
     exit 1
-  }
+  fi
+  cd "$PROJECT_DIR"
+  if git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "   Deployed commit : $(git rev-parse --short HEAD 2>/dev/null)  — $(git log -1 --format='%s' 2>/dev/null) (+ uncommitted local changes, if any)"
+  fi
+else
+  if [ -n "$COMMIT" ]; then
+    echo "▶ Step 3: Cloning programmers' repo and checking out commit $COMMIT..."
+  else
+    echo "▶ Step 3: Cloning latest code from programmers' repo..."
+  fi
+  if [ -d "$PROJECT_DIR" ]; then
+    echo "   Removing existing folder..."
+    rm -rf "$PROJECT_DIR"
+  fi
+  cd "$PARENT_DIR"
+  git clone "$PROGRAMMERS_REPO"
+  echo "✅ Programmers' repo cloned successfully."
+
+  cd "$PROJECT_DIR"
+  if [ -n "$COMMIT" ]; then
+    git checkout "$COMMIT" || {
+      echo "❌ Could not check out commit/ref '$COMMIT' — is it pushed to $PROGRAMMERS_REPO?"
+      exit 1
+    }
+  fi
+  echo "   Deployed commit : $(git rev-parse --short HEAD)  — $(git log -1 --format='%s')"
 fi
-echo "   Deployed commit : $(git rev-parse --short HEAD)  — $(git log -1 --format='%s')"
 
 NAVUTIL="$PROJECT_DIR/src/main/resources/static/js/util/NavUtil.js"
 
@@ -223,7 +268,8 @@ cd "$PROJECT_DIR"
 mvn -N io.takari:maven:wrapper > /dev/null 2>&1
 echo "✅ Maven wrapper regenerated."
 
-# ── STEP 5: Apply AI Assistant files ────────────────────────
+# ── STEP 5: Apply AI Assistant files (skipped in --local-only) ──
+if [ "$LOCAL_ONLY" = false ]; then
 echo ""
 echo "▶ Step 5: Applying AI Assistant files..."
 
@@ -343,8 +389,13 @@ else
 fi
 
 echo "✅ All AI Assistant files applied and verified."
+else
+  echo ""
+  echo "▶ Step 5: Skipped (--local-only)."
+fi
 
 # ── STEP 5b: Apply backend bug-fix patches (TEMPORARY) ───────
+if [ "$LOCAL_ONLY" = false ]; then
 #   These 4 files fix two real bugs in the programmers' repo:
 #     1. TechniqueServiceImpl.importAllData() checked Test Result /
 #        Test Unit uniqueness globally (testResultRepo.findByName,
@@ -397,6 +448,10 @@ if [ -d "$BACKEND_PATCHES_DIR" ]; then
 else
     echo "   ℹ️  No backend_patches folder found — skipping (nothing to apply)."
 fi
+else
+  echo ""
+  echo "▶ Step 5b: Skipped (--local-only)."
+fi
 
 # ── STEP 6: Update application.properties ───────────────────
 echo ""
@@ -425,7 +480,9 @@ echo "▶ Step 7: Pushing merged result to your HPB-AI repo..."
 cd "$PROJECT_DIR"
 git remote add origin "$YOUR_REPO" 2>/dev/null || git remote set-url origin "$YOUR_REPO"
 git add .
-git commit -m "Auto-deploy: merge programmers + AI Assistant [backend: $BACKEND] $(date '+%Y-%m-%d %H:%M')" --no-edit || echo "   (Nothing new to commit)"
+COMMIT_MSG="Auto-deploy: merge programmers + AI Assistant [backend: $BACKEND] $(date '+%Y-%m-%d %H:%M')"
+[ "$LOCAL_ONLY" = true ] && COMMIT_MSG="Auto-deploy: local-only snapshot [backend: $BACKEND] $(date '+%Y-%m-%d %H:%M')"
+git commit -m "$COMMIT_MSG" --no-edit || echo "   (Nothing new to commit)"
 git push origin main --force
 echo "✅ Pushed to HPB-AI repo."
 
