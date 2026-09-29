@@ -104,9 +104,9 @@ ANTHROPIC_API_KEY=""
 # is a pdfplumber-based template parser, not an AI model, and is
 # independent of the AI Assistant above -- it is always deployed,
 # regardless of ENABLE_AI_ASSISTANT.
-# molecular_report_agent/ is not in any git repo yet (unlike every other
-# project folder) -- copy it onto the server by hand, alongside deploy_HPB
-# and ai_agent_learning, before the first run.
+# Pulled from its own repo (MOLECULAR_REPO, set in the Shared-Tomcat section
+# below) by deploy_hpb_tomcat.sh, same as everything else -- no manual copy
+# step needed any more.
 MOLECULAR_AGENT_DIR="$PARENT_DIR/molecular_report_agent"
 MOLECULAR_SIDECAR_PORT=8090
 
@@ -136,6 +136,7 @@ IMPORT_PASSWORD="CHANGE_ME"
 HPB_APP_REPO="https://github.com/roxmer/HPB-AI.git"
 AI_AGENT_REPO="https://github.com/roxmer/ai-agent-hpb.git"
 DEPLOY_ASSETS_REPO="https://github.com/roxmer/HPB-AI-deploy.git"
+MOLECULAR_REPO="https://github.com/roxmer/molecular-report-agent.git"
 
 # The shared Tomcat instance this app is deployed into (dev-hpb, nkcx,
 # dev-vac-admin, dev-follow-up all share this same Tomcat -- NEVER restart
@@ -164,3 +165,11 @@ TOMCAT_OS_USER="tomcat"
 # already owns -- change only if you'd rather store uploads somewhere else.
 FILE_SAVING_DIR="/opt/tomcat/hpb_saved_file"
 FILE_SAVING_DIR_TEMP="/opt/tomcat/hpb_tmp_file"
+
+# NOTE: deploy_hpb_tomcat.sh tries every privileged step (creating these
+# directories, swapping the WAR into Tomcat) without sudo first, then falls
+# back to sudo. If your account gets neither on the new GPU server, the
+# recommended fix is a ONE-TIME IT setup: a shared group (e.g. hpb-deploy)
+# containing your account and TOMCAT_OS_USER, with group-write + setgid on
+# TOMCAT_WEBAPPS_DIR and these two directories -- see the deployment
+# runbook's "IT one-time setup" section for the exact commands to hand IT.

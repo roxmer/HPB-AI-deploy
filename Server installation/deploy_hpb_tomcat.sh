@@ -22,6 +22,15 @@
 #       this hostname to Tomcat + the AI agent) is NOT set up by this script.
 #       That's a one-time, per-server step -- see the runbook, Part C.
 #
+#   Root / sudo: the few steps that write outside your own home directory
+#   (swapping the WAR into Tomcat's webapps dir, creating the upload
+#   directories) try WITHOUT sudo first, then fall back to sudo if that
+#   fails. If your account has neither plain write access nor sudo to those
+#   paths, the script stops and tells you exactly what to ask IT for. See
+#   the deployment runbook's "IT one-time setup" section for the
+#   recommended group-permission approach, which avoids needing sudo (or
+#   IT) on every routine deploy after the first one.
+#
 #   Usage:
 #     ./deploy_hpb_tomcat.sh                        Routine redeploy, keeps
 #                                                    existing database data.
@@ -81,11 +90,35 @@ if [ "$MYSQL_PASSWORD" = "CHANGE_ME_TO_A_STRONG_PASSWORD" ] || [ -z "$MYSQL_PASS
   echo "❌ MYSQL_PASSWORD in hpb_deploy.config is still the placeholder value."
   exit 1
 fi
-if [ -z "$HPB_APP_REPO" ] || [ -z "$AI_AGENT_REPO" ] || [ -z "$DEPLOY_ASSETS_REPO" ]; then
-  echo "❌ HPB_APP_REPO / AI_AGENT_REPO / DEPLOY_ASSETS_REPO must all be set in"
-  echo "   hpb_deploy.config (your own roxmer/* repos, not the upstream one)."
+if [ -z "$HPB_APP_REPO" ] || [ -z "$AI_AGENT_REPO" ] || [ -z "$DEPLOY_ASSETS_REPO" ] || [ -z "$MOLECULAR_REPO" ]; then
+  echo "❌ HPB_APP_REPO / AI_AGENT_REPO / DEPLOY_ASSETS_REPO / MOLECULAR_REPO must all"
+  echo "   be set in hpb_deploy.config (your own roxmer/* repos, not the upstream one)."
   exit 1
 fi
+
+# ── Helper: run a step that may need elevated privilege, working whichever
+#    way IT ends up granting access -- try it plain first (works if your
+#    account already has group write access, the recommended one-time IT
+#    setup -- see the deployment runbook), fall back to sudo (works if IT
+#    gave you sudo instead), and if neither works, fail with the exact ask
+#    for IT rather than a raw permission-denied error.
+run_priv() {
+  local desc="$1"; shift
+  local errfile
+  errfile="$(mktemp)"
+  if "$@" 2>"$errfile"; then
+    rm -f "$errfile"
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1 && sudo "$@" 2>"$errfile"; then
+    rm -f "$errfile"
+    return 0
+  fi
+  echo "❌ Could not $desc (tried without sudo, and with sudo):"
+  sed 's/^/   /' "$errfile" 2>/dev/null
+  rm -f "$errfile"
+  return 1
+}
 
 # ── Parse arguments ────────────────────────────────────────────────────────
 RESET_DB=false
@@ -277,7 +310,8 @@ else
   pull_repo "$HPB_APP_REPO" "$PROJECT_DIR" "HPB-AI (app)"
   pull_repo "$AI_AGENT_REPO" "$AI_AGENT_DIR" "ai-agent-hpb"
   pull_repo "$DEPLOY_ASSETS_REPO" "$DEPLOY_DIR" "HPB-AI-deploy (lookup lists + scripts)"
-  echo "✅ All three repos up to date."
+  pull_repo "$MOLECULAR_REPO" "$MOLECULAR_AGENT_DIR" "molecular-report-agent"
+  echo "✅ All four repos up to date."
 fi
 
 # ── STEP 5: Sync environment-specific secrets (never stored in git) ──────
@@ -318,12 +352,21 @@ print("   ✅ AI agent DB config + model synced")
 PYEOF
 fi
 
-# ── STEP 5b: Ensure upload directories exist and are owned by Tomcat ─────
+# ── STEP 5b: Ensure upload directories exist and are ready for Tomcat ────
 echo ""
 echo "▶ Step 5b: Ensuring file-upload directories are ready..."
-sudo mkdir -p "$FILE_SAVING_DIR" "$FILE_SAVING_DIR_TEMP"
-sudo chown "$TOMCAT_OS_USER:$TOMCAT_OS_USER" "$FILE_SAVING_DIR" "$FILE_SAVING_DIR_TEMP"
-echo "✅ $FILE_SAVING_DIR and $FILE_SAVING_DIR_TEMP ready (owned by $TOMCAT_OS_USER)."
+if ! run_priv "create $FILE_SAVING_DIR and $FILE_SAVING_DIR_TEMP" mkdir -p "$FILE_SAVING_DIR" "$FILE_SAVING_DIR_TEMP"; then
+  echo "   Ask IT, once: sudo mkdir -p \"$FILE_SAVING_DIR\" \"$FILE_SAVING_DIR_TEMP\""
+  echo "   -- or see the deployment runbook's 'IT one-time setup' section for the"
+  echo "   group-permission approach that avoids needing sudo on every deploy."
+  exit 1
+fi
+if ! run_priv "set $TOMCAT_OS_USER as owner of the upload directories" chown "$TOMCAT_OS_USER:$TOMCAT_OS_USER" "$FILE_SAVING_DIR" "$FILE_SAVING_DIR_TEMP"; then
+  echo "   ⚠️  Could not chown to $TOMCAT_OS_USER -- not fatal if these directories are"
+  echo "   already writable by Tomcat some other way (e.g. the group-permission setup"
+  echo "   in the deployment runbook). Continuing."
+fi
+echo "✅ $FILE_SAVING_DIR and $FILE_SAVING_DIR_TEMP ready."
 
 # ── STEP 6: Generate deploy_HPB/.env for the lookup-list importer ────────
 echo ""
@@ -377,24 +420,42 @@ echo "   the other apps sharing this Tomcat are unaffected.)"
 
 BACKUP_NAME="$TOMCAT_WAR_NAME.backup_$(date +%Y%m%d_%H%M%S)"
 if [ -f "$TOMCAT_WEBAPPS_DIR/$TOMCAT_WAR_NAME" ]; then
-  sudo cp "$TOMCAT_WEBAPPS_DIR/$TOMCAT_WAR_NAME" "$HOME/$BACKUP_NAME"
-  echo "   Backed up current WAR to ~/$BACKUP_NAME"
+  if run_priv "back up the current WAR" cp "$TOMCAT_WEBAPPS_DIR/$TOMCAT_WAR_NAME" "$HOME/$BACKUP_NAME"; then
+    echo "   Backed up current WAR to ~/$BACKUP_NAME"
+  else
+    echo "   ⚠️  Could not back up the current WAR — continuing without a backup."
+  fi
 fi
 
-MARKER_LINE=$(sudo wc -l < "$CATALINA_LOG" 2>/dev/null || echo 0)
-sudo cp "$WAR_FILE" "$TOMCAT_WEBAPPS_DIR/$TOMCAT_WAR_NAME"
+if [ -r "$CATALINA_LOG" ]; then
+  MARKER_LINE=$(wc -l < "$CATALINA_LOG" 2>/dev/null || echo 0)
+else
+  MARKER_LINE=$(sudo wc -l < "$CATALINA_LOG" 2>/dev/null || echo 0)
+fi
+
+if ! run_priv "copy the new WAR into $TOMCAT_WEBAPPS_DIR" cp "$WAR_FILE" "$TOMCAT_WEBAPPS_DIR/$TOMCAT_WAR_NAME"; then
+  echo "   Ask IT for ONE of these, once:"
+  echo "     - sudo access for your account to copy into $TOMCAT_WEBAPPS_DIR, or"
+  echo "     - group write access to $TOMCAT_WEBAPPS_DIR (recommended — see the"
+  echo "       deployment runbook's 'IT one-time setup' section)."
+  exit 1
+fi
 echo "   WAR copied — waiting for Tomcat to auto-redeploy (up to 3 minutes)..."
 
 DEPLOY_OK=false
 for i in $(seq 1 90); do
   sleep 2
-  NEW_LINES=$(sudo tail -n +"$((MARKER_LINE + 1))" "$CATALINA_LOG" 2>/dev/null || true)
+  if [ -r "$CATALINA_LOG" ]; then
+    NEW_LINES=$(tail -n +"$((MARKER_LINE + 1))" "$CATALINA_LOG" 2>/dev/null || true)
+  else
+    NEW_LINES=$(sudo tail -n +"$((MARKER_LINE + 1))" "$CATALINA_LOG" 2>/dev/null || true)
+  fi
   if echo "$NEW_LINES" | grep -q "Deployment of web application archive \[$TOMCAT_WEBAPPS_DIR/$TOMCAT_WAR_NAME\] has finished"; then
     DEPLOY_OK=true
     break
   fi
   if echo "$NEW_LINES" | grep -qi "SEVERE.*$TOMCAT_WAR_NAME"; then
-    echo "❌ Tomcat logged a SEVERE error while redeploying. Check: sudo tail -100 $CATALINA_LOG"
+    echo "❌ Tomcat logged a SEVERE error while redeploying. Check: tail -100 $CATALINA_LOG"
     exit 1
   fi
 done
@@ -403,7 +464,7 @@ if [ "$DEPLOY_OK" = true ]; then
   echo "✅ Tomcat redeployed successfully."
 else
   echo "⚠️  Didn't see the 'finished' line within 3 minutes — check manually:"
-  echo "   sudo tail -f $CATALINA_LOG"
+  echo "   tail -f $CATALINA_LOG"
 fi
 
 sleep 3
@@ -429,7 +490,7 @@ echo "  HPB Application Deployed"
 echo "  Backend    : $BACKEND_LABEL"
 echo "  App URL    : https://$SERVER_HOSTNAME/"
 [ "$ENABLE_AI_ASSISTANT" = "true" ] && echo "  AI Agent   : https://$SERVER_HOSTNAME/ai-agent/health"
-echo "  Logs       : $LOG_DIR/   and   sudo tail -f $CATALINA_LOG"
+echo "  Logs       : $LOG_DIR/   and   tail -f $CATALINA_LOG  (add sudo if needed)"
 echo "======================================"
 echo ""
 echo "This script does NOT populate synthetic/test patient data on purpose."
