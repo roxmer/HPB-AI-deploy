@@ -73,6 +73,9 @@ source "$CONFIG_FILE"
 [ -n "$TOMCAT_WAR_NAME" ] || { echo "❌ TOMCAT_WAR_NAME not set in hpb_deploy.config."; exit 1; }
 [ -n "$CATALINA_LOG" ] || { echo "❌ CATALINA_LOG not set in hpb_deploy.config."; exit 1; }
 [ -n "$TOMCAT_PORT" ] || TOMCAT_PORT=8080
+[ -n "$TOMCAT_OS_USER" ] || TOMCAT_OS_USER="tomcat"
+[ -n "$FILE_SAVING_DIR" ] || FILE_SAVING_DIR="$(dirname "$TOMCAT_WEBAPPS_DIR")/hpb_saved_file"
+[ -n "$FILE_SAVING_DIR_TEMP" ] || FILE_SAVING_DIR_TEMP="$(dirname "$TOMCAT_WEBAPPS_DIR")/hpb_tmp_file"
 
 if [ "$MYSQL_PASSWORD" = "CHANGE_ME_TO_A_STRONG_PASSWORD" ] || [ -z "$MYSQL_PASSWORD" ]; then
   echo "❌ MYSQL_PASSWORD in hpb_deploy.config is still the placeholder value."
@@ -284,6 +287,8 @@ PROPS_FILE="$PROJECT_DIR/src/main/resources/application.properties"
 sed -i "s|^spring.datasource.password=.*|spring.datasource.password=$MYSQL_PASSWORD|" "$PROPS_FILE"
 sed -i "s|^spring.datasource.username=.*|spring.datasource.username=$MYSQL_USER|" "$PROPS_FILE"
 sed -i "s|^spring.datasource.url=jdbc:mysql://localhost:3306/.*|spring.datasource.url=jdbc:mysql://localhost:3306/$DB_NAME|" "$PROPS_FILE"
+sed -i "s|^file.saving.directory=.*|file.saving.directory=file://${FILE_SAVING_DIR%/}/|" "$PROPS_FILE"
+sed -i "s|^file.saving.directory.temp=.*|file.saving.directory.temp=file://${FILE_SAVING_DIR_TEMP%/}/|" "$PROPS_FILE"
 echo "✅ application.properties updated."
 
 if [ "$ENABLE_AI_ASSISTANT" = "true" ]; then
@@ -312,6 +317,13 @@ with open(path, "w") as f:
 print("   ✅ AI agent DB config + model synced")
 PYEOF
 fi
+
+# ── STEP 5b: Ensure upload directories exist and are owned by Tomcat ─────
+echo ""
+echo "▶ Step 5b: Ensuring file-upload directories are ready..."
+sudo mkdir -p "$FILE_SAVING_DIR" "$FILE_SAVING_DIR_TEMP"
+sudo chown "$TOMCAT_OS_USER:$TOMCAT_OS_USER" "$FILE_SAVING_DIR" "$FILE_SAVING_DIR_TEMP"
+echo "✅ $FILE_SAVING_DIR and $FILE_SAVING_DIR_TEMP ready (owned by $TOMCAT_OS_USER)."
 
 # ── STEP 6: Generate deploy_HPB/.env for the lookup-list importer ────────
 echo ""

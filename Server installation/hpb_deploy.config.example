@@ -144,3 +144,23 @@ TOMCAT_WEBAPPS_DIR="/opt/tomcat/webapps"
 TOMCAT_WAR_NAME="hpb.war"
 CATALINA_LOG="/opt/tomcat/logs/catalina.out"
 TOMCAT_PORT=8080
+
+# The OS user tomcat.service actually runs as (check with: ps -eo user,cmd | grep tomcat).
+# Needed so the script can chown the two upload folders below to it -- Tomcat
+# cannot create/write files anywhere it doesn't already own.
+TOMCAT_OS_USER="tomcat"
+
+# ------------------------------------------------------------------------------
+# 5c. UPLOADED FILE STORAGE  (Analysis report PDFs, Reference Document PDFs)
+# ------------------------------------------------------------------------------
+# Where the app saves PDFs uploaded through "Add Analysis -> Parse from PDF"
+# and the Reference Document feature. Was hardcoded in application.properties
+# to /opt/tomcat9/saved_file/ (a path left over from the old standalone-Tomcat9
+# model) -- that directory never existed on this server, and even if it had,
+# the tomcat OS user can't create new folders directly under /opt/ (root-owned,
+# mode 755). deploy_hpb_tomcat.sh creates + chowns these to TOMCAT_OS_USER on
+# every deploy and syncs the paths into application.properties automatically.
+# Defaults below sit next to Tomcat's own CATALINA_BASE, which the tomcat user
+# already owns -- change only if you'd rather store uploads somewhere else.
+FILE_SAVING_DIR="/opt/tomcat/hpb_saved_file"
+FILE_SAVING_DIR_TEMP="/opt/tomcat/hpb_tmp_file"
