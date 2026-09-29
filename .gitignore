@@ -2,8 +2,24 @@
 .DS_Store
 ~$*
 old-deployments/
-Server installation/
 Populate DB/
-*.sql
 *.rtf
 imports_fixed_test_server.sh
+
+# SQL: ignored by default (scratch/exploratory scripts), except the two
+# canonical synthetic test data scripts referenced in the deployment runbook
+# -- tracking those so the server copy can never silently drift from the
+# source-of-truth copy again (see runbook Part F item 4).
+*.sql
+!/synthetic_test_patients.sql
+!/synthetic_test_patients_surgery_pathology_v2.sql
+
+# Server installation/: ignored by default (working docs, .DS_Store, a
+# duplicate HPB_Templates/, draft runbooks) except the deploy scripts
+# themselves and a secrets-free config template. hpb_deploy.config itself
+# (real DB password, real API keys) stays ignored -- copy the .example file
+# and fill in real values locally on each server, never commit that file.
+Server installation/*
+!Server installation/deploy_hpb_server.sh
+!Server installation/deploy_hpb_tomcat.sh
+!Server installation/hpb_deploy.config.example

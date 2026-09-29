@@ -30,6 +30,7 @@ other-radiological-finding,OtherRadiologicalFindings_export.xlsx
 postoperativeComplicationDefinition,PostOperativeComplication_export.xlsx
 probeType,ProbeType_export.xlsx
 resectionMarginDefinition,ResectionMarginDefinition_export.xlsx
+margin,Margin_export.xlsx
 severity-type,Severity_Type_export.xlsx
 systemicTherapyDefinition,SystemicTherapyDefinition_export.xlsx
 riskFactor,RiskFactors.xlsx

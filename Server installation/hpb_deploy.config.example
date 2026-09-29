@@ -1,0 +1,146 @@
+# ==============================================================================
+#   HPB-AI — Server Deployment Configuration
+# ==============================================================================
+#   Edit ONLY this file. Never edit deploy_hpb_server.sh or imports_server.sh
+#   directly — both scripts read every setting they need from here, so this
+#   is the one place to make changes for a new server or a password change.
+#
+#   Lines starting with # are comments and are ignored.
+# ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# 1. SERVER IDENTITY  (read this one carefully — see Section 1 of the guide)
+# ------------------------------------------------------------------------------
+# The hostname or IP address the CLINICIAN'S BROWSER will use to reach this
+# server — e.g. "hpb-test.ki.se" or "10.20.30.40". Do NOT put "localhost" or
+# "127.0.0.1" here: the AI Assistant chat window runs inside the clinician's
+# own browser on their own laptop, not on this server, so "localhost" from
+# their laptop would point back at their laptop, not at this server, and the
+# AI Assistant would silently fail to connect. If unsure, ask the network
+# team for the address this VM will be reachable at.
+SERVER_HOSTNAME="dev-hpb.hpvelimination.se"
+
+
+# ------------------------------------------------------------------------------
+# 2. FOLDER LAYOUT
+# ------------------------------------------------------------------------------
+# Everything is installed under PARENT_DIR. The defaults below match the
+# rest of this guide — only change PARENT_DIR if IT policy requires a
+# different install location, and if so, update it consistently everywhere.
+PARENT_DIR="/opt/hpb-ai"
+PROJECT_DIR="$PARENT_DIR/11.-HPB"
+AI_AGENT_DIR="$PARENT_DIR/ai_agent_learning"
+DEPLOY_DIR="$PARENT_DIR/deploy_HPB"
+LOG_DIR="$PARENT_DIR/logs"
+RUN_DIR="$PARENT_DIR/run"
+
+
+# ------------------------------------------------------------------------------
+# 3. DATABASE
+# ------------------------------------------------------------------------------
+# MYSQL_USER: the MySQL account the app connects as. Defaults to "root" if
+# left unset (deploy_hpb_server.sh falls back automatically), but on a
+# shared server you should create a scoped account first (see the guide)
+# and put its name here instead -- this account only needs
+# GRANT ALL PRIVILEGES ON <DB_NAME>.* , never global/root access.
+# Set MYSQL_PASSWORD to a strong password of your choosing BEFORE running
+# the one-time MySQL setup in Section 3 of the guide. The deploy script
+# writes MYSQL_USER/MYSQL_PASSWORD/DB_NAME into both application.properties
+# (SpringBoot) and the AI Agent's DB_CONFIG automatically on every run --
+# you never edit those files by hand.
+MYSQL_USER="hpb_ai_user"
+MYSQL_PASSWORD="CHANGE_ME_TO_A_STRONG_PASSWORD"
+DB_NAME="db_dev_hpb"
+
+
+# ------------------------------------------------------------------------------
+# 4. GIT REPOSITORIES
+# ------------------------------------------------------------------------------
+# Source of the SpringBoot backend code. Read-only — the deploy script only
+# ever clones from here, never pushes here.
+PROGRAMMERS_REPO="https://github.com/kiehealth/11.-HPB.git"
+
+# Where the deploy script commits + pushes the merged result (programmers'
+# code + AI Assistant files). Leave this BLANK ("") to skip the commit/push
+# step entirely — the deploy still works fine locally on the server without
+# it, this only affects whether a record of each deploy is pushed to GitHub.
+# Left blank for now -- pushing here needs a GitHub token configured on
+# this server, which isn't set up yet. Fill this back in once that's done;
+# until then Step 9 just skips the push (harmless, everything else still
+# deploys and runs normally).
+YOUR_REPO=""
+GIT_USER_NAME="roxmer"
+GIT_USER_EMAIL="roxana.martinez@ki.se"
+
+
+# ------------------------------------------------------------------------------
+# 5. AI ASSISTANT
+# ------------------------------------------------------------------------------
+# Set to "false" to skip the AI Assistant entirely on this deploy -- no
+# Ollama/Claude check, no menu entry patched into NavUtil.js, nothing
+# started on AI_AGENT_PORT. Use this while the test server only needs the
+# core registry + report parsing (e.g. the AI Assistant isn't needed for
+# the current pathologist testing round). Flip back to "true" and re-run
+# the script later -- nothing else about the deploy changes.
+ENABLE_AI_ASSISTANT="true"
+
+# The rest of this section only matters when ENABLE_AI_ASSISTANT="true".
+# "ollama" = local LLM, no patient data leaves this server, no API key
+#            needed. Recommended default for a clinician-facing test server.
+# "claude" = Anthropic Claude API. Needs ANTHROPIC_API_KEY below AND
+#            outbound internet access from this server to api.anthropic.com.
+# Either can also be selected per-run with ./deploy_hpb_server.sh --backend claude
+BACKEND="ollama"
+OLLAMA_MODEL="qwen2.5:14b"
+ANTHROPIC_API_KEY=""
+
+
+# ------------------------------------------------------------------------------
+# 5b. MOLECULAR REPORT PARSING SIDECAR  (PDF / JSON Analysis import)
+# ------------------------------------------------------------------------------
+# Local Python service that turns an uploaded genomic/molecular PDF report
+# into the same JSON shape a manual or JSON-import Analysis entry uses. It
+# is a pdfplumber-based template parser, not an AI model, and is
+# independent of the AI Assistant above -- it is always deployed,
+# regardless of ENABLE_AI_ASSISTANT.
+# molecular_report_agent/ is not in any git repo yet (unlike every other
+# project folder) -- copy it onto the server by hand, alongside deploy_HPB
+# and ai_agent_learning, before the first run.
+MOLECULAR_AGENT_DIR="$PARENT_DIR/molecular_report_agent"
+MOLECULAR_SIDECAR_PORT=8090
+
+
+# ------------------------------------------------------------------------------
+# 6. PORTS
+# ------------------------------------------------------------------------------
+# Both ports must be reachable from the clinician's network (see Section 1
+# — Required Infrastructure — for firewall rules). Only change these if
+# 9080/8000 are already used by something else on this server.
+SPRING_PORT=9080
+AI_AGENT_PORT=8000
+
+
+# ------------------------------------------------------------------------------
+# 7. LOOKUP-LIST IMPORT  (used by imports_server.sh — Section 4 of the guide)
+# ------------------------------------------------------------------------------
+# These are the application's own seeded login used ONLY to authenticate the
+# list-import API calls — they are not an OS or database account. They come
+# pre-loaded by the application itself; do not invent different values here.
+IMPORT_USERNAME="sa@yopmail.com"
+IMPORT_PASSWORD="CHANGE_ME"
+
+# ── Shared-Tomcat deployment (deploy_hpb_tomcat.sh) ──────────────────────────
+# Your own repos (already include the AI Assistant integration + today's
+# fixes, once pushed -- no upstream merge/patch step needed).
+HPB_APP_REPO="https://github.com/roxmer/HPB-AI.git"
+AI_AGENT_REPO="https://github.com/roxmer/ai-agent-hpb.git"
+DEPLOY_ASSETS_REPO="https://github.com/roxmer/HPB-AI-deploy.git"
+
+# The shared Tomcat instance this app is deployed into (dev-hpb, nkcx,
+# dev-vac-admin, dev-follow-up all share this same Tomcat -- NEVER restart
+# tomcat.service itself, only ever replace this one WAR file).
+TOMCAT_WEBAPPS_DIR="/opt/tomcat/webapps"
+TOMCAT_WAR_NAME="hpb.war"
+CATALINA_LOG="/opt/tomcat/logs/catalina.out"
+TOMCAT_PORT=8080
