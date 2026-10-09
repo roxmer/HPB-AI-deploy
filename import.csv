@@ -5,7 +5,6 @@ analysisStatus,AnalysisStatus_export.xlsx
 result_type,ResultType_export.xlsx
 relativeType,RelativeType.xlsx
 statusType,Status_Type.xlsx
-eventType,Event_Type_export.xlsx
 grade,Grade_export.xlsx
 protocol,Protocol_template.xlsx
 organization,Organization_export.xlsx
@@ -53,3 +52,7 @@ organ-list,OrganList_Resection_Type_export.xlsx
 primary-parameter,PrimaryParameter_data_export_all.xlsx
 extractionMethod,extraction_method.xlsx
 result_name,ResultName_export.xlsx
+panelContextType,Panel_Context_Type_export.xlsx
+assessmentPurposeType,Assessment_Purpose_Type_export.xlsx
+lab-draw-role,LabDrawRole_export.xlsx
+freezer,Freezer_export.xlsx

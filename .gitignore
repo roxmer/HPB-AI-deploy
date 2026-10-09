@@ -2,17 +2,19 @@
 .DS_Store
 ~$*
 old-deployments/
-Populate DB/
+Populate DB/*
 *.rtf
 imports_fixed_test_server.sh
 
 # SQL: ignored by default (scratch/exploratory scripts), except the two
-# canonical synthetic test data scripts referenced in the deployment runbook
+# canonical synthetic test data scripts and the update_*.sql server scripts referenced in the deployment runbook
 # -- tracking those so the server copy can never silently drift from the
 # source-of-truth copy again (see runbook Part F item 4).
 *.sql
-!/synthetic_test_patients.sql
-!/synthetic_test_patients_surgery_pathology_v2.sql
+!Populate DB/synthetic_test_patients.sql
+!Populate DB/synthetic_test_patients_surgery_pathology_v2.sql
+# One-time update scripts that are run on the server DB (roles, lookup revisions).
+!Populate DB/update_*.sql
 
 # Server installation/: ignored by default (working docs, .DS_Store, a
 # duplicate HPB_Templates/, draft runbooks) except the deploy scripts

@@ -577,7 +577,13 @@ curl -s http://localhost:8000/health > /dev/null 2>&1 \
 #   `rm -rf $PROJECT_DIR` never touches it, so nothing here needs re-patching on redeploy.
 echo ""
 echo "▶ Step 12b: Starting molecular report parsing sidecar on port $MOLECULAR_SIDECAR_PORT..."
-pip3 install --user --quiet -r "$MOLECULAR_AGENT_DIR/requirements.txt"
+if python3 -c "import sys; sys.exit(0 if sys.prefix == sys.base_prefix else 1)"; then
+    # Not in a venv/conda env -- safe to use --user
+    pip3 install --user --quiet -r "$MOLECULAR_AGENT_DIR/requirements.txt"
+else
+    # Inside a virtualenv/conda env -- pip disables --user installs there
+    pip3 install --quiet -r "$MOLECULAR_AGENT_DIR/requirements.txt"
+fi
 cd "$MOLECULAR_AGENT_DIR"
 nohup python3 service.py --port "$MOLECULAR_SIDECAR_PORT" \
     > "$MOLECULAR_AGENT_DIR/sidecar.log" 2>&1 &
