@@ -56,3 +56,6 @@ panelContextType,Panel_Context_Type_export.xlsx
 assessmentPurposeType,Assessment_Purpose_Type_export.xlsx
 lab-draw-role,LabDrawRole_export.xlsx
 freezer,Freezer_export.xlsx
+laboratory,Laboratory_export.xlsx
+discipline,Discipline_export.xlsx
+performance-status,PerformanceStatus_export.xlsx

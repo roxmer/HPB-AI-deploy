@@ -69,6 +69,7 @@ echo ""
 SUCCESS=0
 FAILED=0
 SKIPPED=0
+PRESENT=0   # lists whose rows already exist (e.g. filled by a database migration): nothing to import, not an error
 
 # Skip header row with tail -n +2
 while IFS=',' read -r API_PATH FILENAME; do
@@ -106,8 +107,13 @@ while IFS=',' read -r API_PATH FILENAME; do
     SUCCESS=$((SUCCESS + 1))
   else
     MESSAGE=$(echo "$RESPONSE" | python3 -c "import json,sys; data=json.load(sys.stdin); print(data.get('message', 'Unknown error'))" 2>/dev/null)
-    echo "❌ FAILED   [$API_PATH] — $FILENAME — $MESSAGE (Endpoint: $IMPORT_ENDPOINT)"
-    FAILED=$((FAILED + 1))
+    if echo "$MESSAGE" | grep -qi "All entries were duplicates"; then
+      echo "⏭️  PRESENT  [$API_PATH] — $FILENAME — already in the database (nothing to import)"
+      PRESENT=$((PRESENT + 1))
+    else
+      echo "❌ FAILED   [$API_PATH] — $FILENAME — $MESSAGE (Endpoint: $IMPORT_ENDPOINT)"
+      FAILED=$((FAILED + 1))
+    fi
   fi
 
 done < <(tail -n +2 "$CSV_FILE")
@@ -116,7 +122,8 @@ done < <(tail -n +2 "$CSV_FILE")
 echo ""
 echo "======================================"
 echo "  Import Complete!"
-echo "  ✅ Success:  $SUCCESS"
-echo "  ❌ Failed:   $FAILED"
+echo "  ✅ Imported:        $SUCCESS"
+echo "  ⏭️  Already present: $PRESENT"
+echo "  ❌ Failed:          $FAILED"
 echo "  ⚠️  Skipped:  $SKIPPED"
 echo "======================================"
