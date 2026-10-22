@@ -40,6 +40,7 @@ Found only on their own Settings page, with no dropdown, entity link or service 
   texts workbooks are empty): the TNM staging does NOT read them, it reads Primary Parameter and Allowed Value (section C)
 - **Secondary Grade of Differentiation** (`SecondaryGradeDifferentiation.xlsx`)
 - **Tissue Sample NGS Panel**, **Tube Type**
+- **Histological Tumor SubType Definition** (22 liver-tumour subtypes): no Pathology form has a Subtype dropdown; a pathology event can hold one and its details page would show it, but nothing sets it. Moved to the "Not Used Today" menu group on 2026-10-22. Its import works since V1_1_180.
 - **Coding System Version**
 These are not in `import.csv`.
 
