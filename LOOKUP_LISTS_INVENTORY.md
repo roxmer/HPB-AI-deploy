@@ -60,3 +60,6 @@ grading are different concepts: to be decided (see the Settings menu discussion)
 Patient data and events (analysis, sample, diagnostic, event, radiology, pathology, medical assessment, systemic
 therapy, lab test, lab test result, blood and tissue sampling, family history, status, clinical data, external data,
 MDT decisions): imported through the Bulk Import page or their own pages, not through `import.csv`.
+
+## G. Values aligned with the step-1 workbook (2026-10-23, migration V1_1_182)
+The permitted values of the IHPB step-1 data sheet (legend, "Permitted values") are the reference for the lists the bulk import resolves by name. Renamed in place: MDK flow "NEOADJUVANT (RESECTABLE-BORDERLINE)" to "NEOADJUVANT (BORDERLINE RESECTABLE)"; systemic therapy "Gemcitabine plus nab-paclitaxel" to "gem + nab-paclitaxel" and "Gemcitabine" to "gem mono". Added: MDK flow "NEOADJUVANT (RESECTABLE)"; radiologist assessment "NO EVIDENCE OF RECURRENCE", "EQUIVOCAL FOR RECURRENCE", "RECURRENCE"; systemic therapy "NALIRIFOX", "other"; corporal location "Pancreas primary", "Liver metastasis", "Peritoneum", "Node", "Effusion", "Other". The Excel templates `Corporal Location_export.xlsx` and `SystemicTherapyDefinition_export.xlsx` carry the same values. Still without a list: the clinical trial of the first line (no | PREOPANC-3 | other | not documented).

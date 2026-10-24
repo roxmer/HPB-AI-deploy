@@ -59,3 +59,9 @@ freezer,Freezer_export.xlsx
 laboratory,Laboratory_export.xlsx
 discipline,Discipline_export.xlsx
 performance-status,PerformanceStatus_export.xlsx
+routeToDiagnosisType,RouteToDiagnosisType_export.xlsx
+mdkFlowType,MdkFlowType_export.xlsx
+provenanceType,ProvenanceType_export.xlsx
+radiologistAssessmentType,RadiologistAssessmentType_export.xlsx
+reviewerPatternType,ReviewerPatternType_export.xlsx
+radiologyOtherRoleType,RadiologyOtherRoleType_export.xlsx

@@ -107,7 +107,7 @@ while IFS=',' read -r API_PATH FILENAME; do
     SUCCESS=$((SUCCESS + 1))
   else
     MESSAGE=$(echo "$RESPONSE" | python3 -c "import json,sys; data=json.load(sys.stdin); print(data.get('message', 'Unknown error'))" 2>/dev/null)
-    if echo "$MESSAGE" | grep -qi "All entries were duplicates"; then
+    if echo "$MESSAGE" | grep -qiE "All entries were duplicates|No new valid entries to import|No new data imported|All records already exist"; then
       echo "⏭️  PRESENT  [$API_PATH] — $FILENAME — already in the database (nothing to import)"
       PRESENT=$((PRESENT + 1))
     else
