@@ -15,9 +15,10 @@ Details: `CLEAN_INSTALL_CHECKLIST.md` (what a fresh instance contains) and `Popu
    `mysqldump -u hpb_ai_user -p db_dev_hpb > ~/db_dev_hpb_before_clean_<date>.sql`
 3. **Check `hpb_deploy.config`** (in `Server installation/`): `MYSQL_PASSWORD`, `IMPORT_USERNAME`, `IMPORT_PASSWORD` are real
    values (not `CHANGE_ME`).
-4. **Deploy with a database reset** (no `--keep-db`): `./deploy_hpb_tomcat.sh` (or `deploy_hpb_server.sh`, whichever you used
-   last time). Wait until Flyway has finished and the application is up.
-5. **Import the lookup lists:** `BASE_URL=<server URL> ./imports_server.sh import.csv`.
+4. **Deploy with a database reset:** `cd /opt/hpb-ai/deploy_HPB/"Server installation" && ./deploy_hpb_tomcat.sh --reset-db`
+   (without `--reset-db` the script keeps the data). Wait until Flyway has finished and the app answers at `http://localhost:8080/hpb/`.
+5. **Import the lookup lists:** `cd /opt/hpb-ai/deploy_HPB && ./imports_fixed.sh import.csv`
+   (the deploy script wrote `.env` with the right URL and the Super Admin login).
    Expected: 50 imported, 8 already present, 0 failed.
 6. **Run the role scripts in this order** (each is idempotent; the check queries at the end must print no rows):
    1. `Populate DB/bootstrap_roles_clinician_researcher.sql`
