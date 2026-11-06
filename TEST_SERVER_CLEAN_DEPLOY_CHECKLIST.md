@@ -1,47 +1,24 @@
 # Test server: clean deploy checklist (empty DB, 4 users, lookup lists, correct roles)
 
-Written 2026-11-03. Run from inside the KI network. Nothing here was run on the server by the author; the same sequence
-was run locally on port 9080 (`deploy_hpb_local.sh --local-only`, then the list import).
-Details: `CLEAN_INSTALL_CHECKLIST.md` (what a fresh instance contains) and `Populate DB/ROLES_README.md` (roles).
+Written 2026-11-03. The full version, with the reasons, is Part J of `Server installation/HPB-AI Test Server Deployment Runbook.docx`.
+Server routine: `deploy_hpb_server.sh --local-only` (resets the DB unless `--keep-db`), then the manual war swap into Tomcat.
 
 ## Result you should get
-- Roles: Super Admin, Clinician, Researcher, Student. Users: `sa@`, `doctor@` (Clinician), `researcher@`, `student@yopmail.com`.
-- Lookup lists imported; no patients; Settings and Role Management visible only to Super Admin.
+- Roles Super Admin, Clinician, Researcher, Student; users `sa@`, `doctor@` (Clinician), `researcher@`, `student@yopmail.com`.
+- Lookup lists imported, no patients, Settings and Role Management visible only to Super Admin.
 
 ## Steps
-1. **Code is on GitHub.** `roxmer/HPB-AI` main holds the application (chart in the PDF, patient ID in the PDF file name, migrations).
-   `roxmer/HPB-AI-deploy` main holds this folder (lists, role scripts). Both must be pushed before the server pulls them.
-2. **Back up the database** if it holds anything you want to keep (the deploy drops it):
-   `mysqldump -u hpb_ai_user -p db_dev_hpb > ~/db_dev_hpb_before_clean_<date>.sql`
-3. **Check `hpb_deploy.config`** (in `Server installation/`): `MYSQL_PASSWORD`, `IMPORT_USERNAME`, `IMPORT_PASSWORD` are real
-   values (not `CHANGE_ME`).
-4. **Deploy with a database reset:** `cd /opt/hpb-ai/deploy_HPB/"Server installation" && ./deploy_hpb_tomcat.sh --reset-db`
-   (without `--reset-db` the script keeps the data). Wait until Flyway has finished and the app answers at `http://localhost:8080/hpb/`.
-5. **Import the lookup lists:** `cd /opt/hpb-ai/deploy_HPB && ./imports_fixed.sh import.csv`
-   (the deploy script wrote `.env` with the right URL and the Super Admin login).
-   Expected: 50 imported, 8 already present, 0 failed.
-6. **Run the role scripts in this order** (each is idempotent; the check queries at the end must print no rows):
-   1. `Populate DB/bootstrap_roles_clinician_researcher.sql`
-   2. `Populate DB/update_role_clinician_2026-10-07.sql`
-   3. `Populate DB/update_role_researcher_2026-10-09.sql`
-   4. `Populate DB/update_role_sampling_and_lookup_rules_2026-10-13.sql`
-   5. `Populate DB/update_role_settings_menu_2026-11-03.sql` (removes Settings and Role Management from Clinician and Researcher)
+1. **Server: back up** `mysqldump -u hpb_ai_user -p --protocol=TCP -h 127.0.0.1 --no-tablespaces db_dev_hpb > ~/db_dev_hpb_before_clean_<date>.sql`; the last line must be `-- Dump completed`.
+2. **Mac: three rsyncs** (11.-HPB with `--exclude /opt`, ai_agent_learning, deploy_HPB without `--delete` and without the server config); commands in Runbook Part J, step 3b.
+3. **Server: patch check** (must print `checked`, no `DIFF`): compare every file under `ai_agent_learning/backend_patches` with `/opt/hpb-ai/11.-HPB`.
+4. **Server: copy `HPB_Templates`** from `~/hpb_staging/deploy_HPB` to `/opt/hpb-ai/deploy_HPB` (DEPLOY_DIR) and diff.
+5. **Server: config check** `grep ... | grep -c CHANGE_ME` prints 0.
+6. **Server: deploy with reset** `cd ~/hpb_staging/deploy_HPB/"Server installation" && bash ./deploy_hpb_server.sh --local-only`
+7. **Server: import lists** (standalone copy still on 9080) `bash ./imports_server.sh ../import.csv`; expect 50 imported, 8 present, 0 failed.
+8. **Server: five role scripts in order** (`Populate DB/`): bootstrap_roles_clinician_researcher, update_role_clinician_2026-10-07, update_role_researcher_2026-10-09, update_role_sampling_and_lookup_rules_2026-10-13, update_role_settings_menu_2026-11-03.
+9. **Server: swap the war into Tomcat** (kill springboot, back up hpb.war, copy ROOT.war, watch catalina.out).
+10. **Browser:** Super Admin sees Settings and Role Management; Clinician and Researcher do not (log in again); Clinician chart and report PDF (patient ID in the file name) work.
+11. **Patients:** Bulk Import ds3 shifted, then TEST-A, then TEST-B; 9 of 10 rows each, `SYN-017` fails as in the source file.
+12. Change the default passwords if anyone outside the team can reach the server.
 
-   Example: `mysql -u hpb_ai_user -p db_dev_hpb < "Populate DB/<file>.sql"`
-7. **Check:**
-   - Database: only the 4 roles and 4 users.
-   - Super Admin: Settings and Role Management visible.
-   - Clinician and Researcher (log in again, rights are read at login): no Settings, no Role Management.
-     Clinician: Patient, Event, Bulk Import. Researcher: no Event, no report.
-   - As Clinician: open a patient, the chart opens; the complete report PDF has the chart page, and the file name contains the patient ID.
-8. **Import patients** (Bulk Import, as Super Admin or Clinician): `IHPB_step1_master_ds3.0-fixed_shifted.xlsx` first, then
-   `IHPB_step1_ds3.0_TEST-A_followup_scans_and_labs.xlsx`, then `IHPB_step1_ds3.0_TEST-B_later_followup.xlsx`
-   (all in `Research data/` and `Research data/Test Ds Files/`).
-   Expected: 9 of 10 patients each time; the `SYN-017` row fails with "date_birth is required for a new patient" (the source file);
-   TEST-B skips its repeated rows as duplicates; no conflicts.
-9. **Change the default passwords** of the four users if anyone outside the team can reach the server.
-
-## Known limits
-- The AI Assistant cannot be tested on the test server (no GPU).
-- ds5 and its pathology template are not deployed (template v3 exists only locally); rehearse the ds5 import before using it.
-- The Student role comes from the seed and is not part of the agreed role set.
+Not covered: AI Assistant (no GPU on the test server); ds5 and its pathology template (not deployed).
