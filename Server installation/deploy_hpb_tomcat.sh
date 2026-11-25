@@ -318,8 +318,16 @@ fi
 echo ""
 echo "▶ Step 5: Syncing DB credentials + hostname into the build..."
 PROPS_FILE="$PROJECT_DIR/src/main/resources/application.properties"
-sed -i "s|^spring.datasource.password=.*|spring.datasource.password=$MYSQL_PASSWORD|" "$PROPS_FILE"
-sed -i "s|^spring.datasource.username=.*|spring.datasource.username=$MYSQL_USER|" "$PROPS_FILE"
+# DB_CREDENTIALS_FROM_ENV=true (hpb_deploy.config): the WAR keeps the
+# placeholders ${HPB_DB_USERNAME}/${HPB_DB_PASSWORD} and Tomcat supplies the
+# values from its own environment (setenv.sh, see the guide) -- no password
+# is baked into the WAR. Default false = previous behaviour (baked in).
+if [ "${DB_CREDENTIALS_FROM_ENV:-false}" = "true" ]; then
+  echo "   DB credentials: left as environment placeholders (Tomcat must have HPB_DB_PASSWORD set)."
+else
+  sed -i "s|^spring.datasource.password=.*|spring.datasource.password=$MYSQL_PASSWORD|" "$PROPS_FILE"
+  sed -i "s|^spring.datasource.username=.*|spring.datasource.username=$MYSQL_USER|" "$PROPS_FILE"
+fi
 sed -i "s|^spring.datasource.url=jdbc:mysql://localhost:3306/.*|spring.datasource.url=jdbc:mysql://localhost:3306/$DB_NAME|" "$PROPS_FILE"
 sed -i "s|^file.saving.directory=.*|file.saving.directory=file://${FILE_SAVING_DIR%/}/|" "$PROPS_FILE"
 sed -i "s|^file.saving.directory.temp=.*|file.saving.directory.temp=file://${FILE_SAVING_DIR_TEMP%/}/|" "$PROPS_FILE"
@@ -328,27 +336,20 @@ echo "✅ application.properties updated."
 if [ "$ENABLE_AI_ASSISTANT" = "true" ]; then
   AGENT_PY_PATH="$AI_AGENT_DIR/$AGENT_FILE"
   [ -f "$AGENT_PY_PATH" ] || { echo "❌ $AGENT_PY_PATH not found."; exit 1; }
-  python3 - "$AGENT_PY_PATH" "$MYSQL_PASSWORD" "$OLLAMA_MODEL" "$BACKEND" "$MYSQL_USER" "$DB_NAME" << 'PYEOF'
+  # The agent no longer keeps DB credentials in its source: it reads them from
+  # .env.hpb_ai (written in Step 11b). Only the model name is synced here.
+  python3 - "$AGENT_PY_PATH" "$OLLAMA_MODEL" "$BACKEND" << 'PYEOF'
 import re, sys
-path, mysql_password, ollama_model, backend, mysql_user, db_name = sys.argv[1:7]
+path, ollama_model, backend = sys.argv[1:4]
 with open(path, "r") as f:
     content = f.read()
-content = re.sub(r'("password"\s*:\s*)"[^"]*"',
-                  lambda m: m.group(1) + '"' + mysql_password.replace('\\', '\\\\').replace('"', '\\"') + '"',
-                  content, count=1)
-content = re.sub(r'("user"\s*:\s*)"[^"]*"',
-                  lambda m: m.group(1) + '"' + mysql_user.replace('\\', '\\\\').replace('"', '\\"') + '"',
-                  content, count=1)
-content = re.sub(r'("database"\s*:\s*)"[^"]*"',
-                  lambda m: m.group(1) + '"' + db_name.replace('\\', '\\\\').replace('"', '\\"') + '"',
-                  content, count=1)
 if backend == "ollama":
     content = re.sub(r'(MODEL_NAME\s*=\s*)"[^"]*"',
                       lambda m: m.group(1) + '"' + ollama_model + '"',
                       content, count=1)
 with open(path, "w") as f:
     f.write(content)
-print("   ✅ AI agent DB config + model synced")
+print("   ✅ AI agent model synced")
 PYEOF
 fi
 
@@ -478,6 +479,25 @@ chmod +x imports_fixed.sh
 ./imports_fixed.sh import.csv || echo "   ⚠️  Some lists reported failures above -- 'duplicate' failures are expected"
 echo "   and harmless on a database that already has data; check any other kind"
 echo "   of failure manually."
+
+# ── STEP 11b: Read-only database account for the AI agent ─────────────────
+if [ "$ENABLE_AI_ASSISTANT" = "true" ]; then
+  echo ""
+  echo "▶ Step 11b: Creating/refreshing the AI agent's read-only database account..."
+  if HPB_ADMIN_DB_USER="$MYSQL_USER" HPB_ADMIN_DB_PASSWORD="$MYSQL_PASSWORD" \
+       "$AI_AGENT_DIR/.venv/bin/python" "$AI_AGENT_DIR/create_readonly_db_user.py" --db "$DB_NAME"; then
+    echo "✅ Agent connects as the read-only account (credentials in $AI_AGENT_DIR/.env.hpb_ai)."
+  else
+    echo "⚠️  $MYSQL_USER is not allowed to create database users (needs CREATE USER and"
+    echo "   GRANT OPTION). Ask IT to run ONCE, as a MySQL admin:"
+    echo "     HPB_ADMIN_DB_USER=<admin> HPB_ADMIN_DB_PASSWORD=<...> $AI_AGENT_DIR/.venv/bin/python $AI_AGENT_DIR/create_readonly_db_user.py --db $DB_NAME"
+    if [ ! -f "$AI_AGENT_DIR/.env.hpb_ai" ]; then
+      echo "   Falling back to the application account $MYSQL_USER for the agent (NOT read-only)."
+      ( umask 077; printf 'HPB_AI_DB_USER=%s\nHPB_AI_DB_PASSWORD=%s\nHPB_AI_DB_NAME=%s\n' \
+          "$MYSQL_USER" "$MYSQL_PASSWORD" "$DB_NAME" > "$AI_AGENT_DIR/.env.hpb_ai" )
+    fi
+  fi
+fi
 
 # ── STEP 12: Restart AI agent + sidecar ───────────────────────────────────
 echo ""

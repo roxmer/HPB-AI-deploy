@@ -52,6 +52,11 @@ RUN_DIR="$PARENT_DIR/run"
 MYSQL_USER="hpb_ai_user"
 MYSQL_PASSWORD="CHANGE_ME_TO_A_STRONG_PASSWORD"
 DB_NAME="db_dev_hpb"
+# DB_CREDENTIALS_FROM_ENV: "true" = the WAR keeps ${HPB_DB_USERNAME}/${HPB_DB_PASSWORD}
+# placeholders and Tomcat supplies them from its environment (setenv.sh, see the
+# guide, "Server: database credentials from the environment"). "false" (default)
+# = the deploy script bakes MYSQL_USER/MYSQL_PASSWORD into the WAR as before.
+DB_CREDENTIALS_FROM_ENV="false"
 
 
 # ------------------------------------------------------------------------------

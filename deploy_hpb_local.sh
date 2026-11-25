@@ -455,9 +455,12 @@ fi
 
 # ── STEP 6: Update application.properties ───────────────────
 echo ""
-echo "▶ Step 6: Updating database password in application.properties..."
+echo "▶ Step 6: Preparing application.properties (no password is written to it)..."
 PROPS_FILE="$PROJECT_DIR/src/main/resources/application.properties"
-sed -i '' "s|^spring.datasource.password=.*|spring.datasource.password=$MYSQL_PASSWORD|" "$PROPS_FILE"
+# The database password is NOT written into application.properties any more:
+# it reads ${HPB_DB_PASSWORD} from the environment, which Step 13 exports
+# from MYSQL_PASSWORD in deploy_HPB/.env just before SpringBoot starts.
+# This also keeps the password out of the commit that Step 7 pushes to GitHub.
 
 # When --keep-db is used, the freshly-cloned 11.-HPB code can contain new
 # Flyway migrations that were added upstream AFTER your local database's
@@ -472,7 +475,7 @@ if ! grep -q "^spring.flyway.out-of-order=" "$PROPS_FILE"; then
   [ -n "$(tail -c1 "$PROPS_FILE")" ] && echo "" >> "$PROPS_FILE"
   echo "spring.flyway.out-of-order=true" >> "$PROPS_FILE"
 fi
-echo "✅ application.properties updated."
+echo "✅ application.properties ready."
 
 # ── STEP 7: Push merged result to your HPB-AI repo ──────────
 echo ""
@@ -551,6 +554,19 @@ cd "$AI_AGENT_DIR"
 # not be found ("nohup: uvicorn: No such file or directory" in agent.log).
 source "$AI_AGENT_DIR/.venv/bin/activate"
 
+# The agent connects to MySQL as a read-only account (hpb_ai_reader), never
+# as root. create_readonly_db_user.py creates it (or refreshes its grants,
+# keeping the password) and writes its credentials to ai_agent_learning/.env.hpb_ai.
+# On a freshly reset database the tables do not exist until SpringBoot has
+# finished its Flyway migrations, so the grants are refreshed again in the
+# background once port 9080 answers.
+grant_agent_account() {
+  HPB_ADMIN_DB_USER=root HPB_ADMIN_DB_PASSWORD="$MYSQL_PASSWORD" \
+    python "$AI_AGENT_DIR/create_readonly_db_user.py" --db "$DB_NAME" 2>&1 | sed 's/^/   /'
+}
+grant_agent_account || echo "⚠️  Could not create the read-only agent account -- the AI Agent will not start without it."
+( until curl -s -o /dev/null http://localhost:9080/; do sleep 5; done; grant_agent_account >> "$AI_AGENT_DIR/agent.log" 2>&1 ) &
+
 if [ "$BACKEND" = "claude" ]; then
   env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
       nohup uvicorn "$AGENT_MODULE:app" --host 0.0.0.0 --port 8000 \
@@ -610,4 +626,7 @@ echo "  Sidecar Log: $MOLECULAR_AGENT_DIR/sidecar.log"
 echo "======================================"
 echo ""
 cd "$PROJECT_DIR"
+# Secrets for SpringBoot come from the environment (see application.properties).
+export HPB_DB_USERNAME=root
+export HPB_DB_PASSWORD="$MYSQL_PASSWORD"
 mvn spring-boot:run -DskipTests

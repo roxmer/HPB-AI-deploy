@@ -453,8 +453,14 @@ fi
 echo ""
 echo "▶ Step 7: Updating application.properties (DB password + port)..."
 PROPS_FILE="$PROJECT_DIR/src/main/resources/application.properties"
-sed -i "s|^spring.datasource.password=.*|spring.datasource.password=$MYSQL_PASSWORD|" "$PROPS_FILE"
-sed -i "s|^spring.datasource.username=.*|spring.datasource.username=$MYSQL_USER|" "$PROPS_FILE"
+# DB_CREDENTIALS_FROM_ENV=true (hpb_deploy.config): keep the ${HPB_DB_USERNAME}/
+# ${HPB_DB_PASSWORD} placeholders in the build; this script exports the values for
+# the standalone jar, and Tomcat must have them in its own environment (setenv.sh,
+# see the guide) for the war. Default false = baked into the build as before.
+if [ "${DB_CREDENTIALS_FROM_ENV:-false}" != "true" ]; then
+  sed -i "s|^spring.datasource.password=.*|spring.datasource.password=$MYSQL_PASSWORD|" "$PROPS_FILE"
+  sed -i "s|^spring.datasource.username=.*|spring.datasource.username=$MYSQL_USER|" "$PROPS_FILE"
+fi
 sed -i "s|^spring.datasource.url=jdbc:mysql://localhost:3306/.*|spring.datasource.url=jdbc:mysql://localhost:3306/$DB_NAME|" "$PROPS_FILE"
 sed -i "s|^server.port=.*|server.port=$SPRING_PORT|" "$PROPS_FILE"
 echo "✅ application.properties updated (datasource URL, username, password, port)."
@@ -475,63 +481,22 @@ if [ ! -f "$AGENT_PY_PATH" ]; then
   exit 1
 fi
 
-python3 - "$AGENT_PY_PATH" "$MYSQL_PASSWORD" "$OLLAMA_MODEL" "$BACKEND" "$MYSQL_USER" "$DB_NAME" << 'PYEOF'
+# The agent reads its DB credentials from .env.hpb_ai, not from its source file.
+# This legacy script uses the application account; for a read-only agent account
+# run create_readonly_db_user.py once as a MySQL admin (it rewrites .env.hpb_ai).
+if [ ! -f "$AI_AGENT_DIR/.env.hpb_ai" ]; then
+  ( umask 077; printf 'HPB_AI_DB_USER=%s\nHPB_AI_DB_PASSWORD=%s\nHPB_AI_DB_NAME=%s\n' \
+      "$MYSQL_USER" "$MYSQL_PASSWORD" "$DB_NAME" > "$AI_AGENT_DIR/.env.hpb_ai" )
+fi
+python3 - "$AGENT_PY_PATH" "$OLLAMA_MODEL" "$BACKEND" << 'PYEOF'
 import re, sys
-
-path, mysql_password, ollama_model, backend, mysql_user, db_name = sys.argv[1:7]
-
+path, ollama_model, backend = sys.argv[1:4]
 with open(path, "r") as f:
     content = f.read()
-
-new_content, n = re.subn(
-    r'("password"\s*:\s*)"[^"]*"',
-    lambda m: m.group(1) + '"' + mysql_password.replace('\\', '\\\\').replace('"', '\\"') + '"',
-    content,
-    count=1,
-)
-if n == 1:
-    print("   ✅ DB_CONFIG password synced")
-else:
-    print("   ⚠️  Could not find a DB_CONFIG password field to patch — check manually")
-content = new_content
-
-new_content, n = re.subn(
-    r'("user"\s*:\s*)"[^"]*"',
-    lambda m: m.group(1) + '"' + mysql_user.replace('\\', '\\\\').replace('"', '\\"') + '"',
-    content,
-    count=1,
-)
-if n == 1:
-    print("   ✅ DB_CONFIG user synced")
-else:
-    print("   ⚠️  Could not find a DB_CONFIG user field to patch — check manually")
-content = new_content
-
-new_content, n = re.subn(
-    r'("database"\s*:\s*)"[^"]*"',
-    lambda m: m.group(1) + '"' + db_name.replace('\\', '\\\\').replace('"', '\\"') + '"',
-    content,
-    count=1,
-)
-if n == 1:
-    print("   ✅ DB_CONFIG database synced")
-else:
-    print("   ⚠️  Could not find a DB_CONFIG database field to patch — check manually")
-content = new_content
-
 if backend == "ollama":
-    updated, n2 = re.subn(
-        r'(MODEL_NAME\s*=\s*)"[^"]*"',
-        lambda m: m.group(1) + '"' + ollama_model + '"',
-        content,
-        count=1,
-    )
-    if n2 == 1:
-        print(f"   ✅ MODEL_NAME synced to {ollama_model}")
-        content = updated
-    else:
-        print("   ⚠️  Could not find MODEL_NAME to patch — check manually")
-
+    content = re.sub(r'(MODEL_NAME\s*=\s*)"[^"]*"',
+                      lambda m: m.group(1) + '"' + ollama_model + '"',
+                      content, count=1)
 with open(path, "w") as f:
     f.write(content)
 PYEOF
@@ -656,6 +621,7 @@ if [ -z "$APP_JAR" ]; then
   exit 1
 fi
 
+export HPB_DB_USERNAME="$MYSQL_USER" HPB_DB_PASSWORD="$MYSQL_PASSWORD"   # read by application.properties placeholders
 setsid nohup java -jar "$APP_JAR" \
     > "$LOG_DIR/springboot.log" 2>&1 < /dev/null &
 SPRING_PID=$!
